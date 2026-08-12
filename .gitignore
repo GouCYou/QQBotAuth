@@ -1,0 +1,17 @@
+.gradle/
+.idea/
+build/
+run/
+*.iml
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+*.log
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+config.yml.qqbotauth-backup-*

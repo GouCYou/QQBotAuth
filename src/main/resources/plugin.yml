@@ -1,0 +1,21 @@
+name: QQBotAuth
+version: '${version}'
+main: cn.cctstudio.qqbotauth.QQBotAuthPlugin
+api-version: '1.21.11'
+load: POSTWORLD
+authors: [GouC, CCTStudio]
+description: CCTStudio 官方 QQ 机器人账号验证插件
+depend: [AuthMe]
+commands:
+  qqverify:
+    description: 打开 QQ 验证界面或管理 QQBotAuth
+    usage: /qqverify [status|code|groups|reload|migrate mysql]
+    aliases: [qqyz]
+    permission: qqbotauth.use
+permissions:
+  qqbotauth.use:
+    description: 使用 QQ 验证功能
+    default: true
+  qqbotauth.admin:
+    description: 管理 QQBotAuth
+    default: op

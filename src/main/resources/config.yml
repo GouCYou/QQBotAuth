@@ -1,0 +1,94 @@
+# QQ 官方机器人配置。环境变量可覆盖敏感字段，详见 README.md。
+qq:
+  enabled: true
+  app-id: ""
+  app-secret: ""
+  api-base-url: "https://api.bot.qq.com"
+  access-token-url: "https://api.bot.qq.com/app/getAppAccessToken"
+  # 面向玩家展示的普通 QQ 群号，不参与官方群身份校验。
+  group-number: ""
+  # 官方事件中的 group_openid 白名单。空列表为安全发现模式：连接 Gateway，记录群来源，但不执行群命令。
+  # 在目标群 @机器人 后，使用 /qqverify groups 查看并复制对应值。
+  allowed-group-openids: []
+  connect-timeout-seconds: 15
+  request-timeout-seconds: 15
+  reconnect-max-delay-seconds: 60
+
+verification:
+  code-length: 6
+  expire-seconds: 120
+
+# QQ 群中由机器人发送的纯文本回复。<minecraft> 会替换为玩家名。
+qq-messages:
+  help: |-
+    可用指令：
+    绑定 <验证码> - 绑定 CCTStudio 账号
+    查询 - 查看当前绑定
+    解绑 - 解除当前 QQ 在本群的绑定
+    帮助 - 查看本说明
+  unknown-command: "没有找到这个指令。发送“帮助”查看可用指令。"
+  operation-failed: "操作失败，请稍后重试。若问题持续，请联系服务器管理员。"
+  bind-usage: "用法：绑定 <游戏内显示的验证码>"
+  bind-success: "绑定成功！CCTStudio 账号：<minecraft>。现在可以返回游戏，系统将自动放行。"
+  bind-invalid-code: "验证码无效或已过期，请重新进入服务器获取新的验证码。"
+  bind-qq-already-bound: "这个 QQ 账号已经绑定了其他 CCTStudio 账号，请先发送“解绑”。"
+  bind-minecraft-already-bound: "这个 CCTStudio 账号已经完成绑定。"
+  bind-code-used: "验证码已经被使用，请重新进入服务器获取新的验证码。"
+  query-bound: "已绑定 CCTStudio 账号：<minecraft>"
+  query-unbound: "当前 QQ 尚未绑定 CCTStudio 账号。"
+  unbind-success: "解绑成功。下次进入服务器时需要重新完成 QQ 验证。"
+  unbind-not-bound: "当前 QQ 没有可解除的绑定。"
+
+database:
+  # sqlite 或 mysql
+  mode: sqlite
+  sqlite:
+    file: "bindings.db"
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    database: "qqbotauth"
+    username: ""
+    password: ""
+    use-ssl: false
+    allow-public-key-retrieval: true
+
+player:
+  block-movement: true
+  block-interaction: true
+  # 完成 QQ 验证前屏蔽其余全部指令；Velocity 还会隐藏对应命令与服务器补全。
+  block-server-command: true
+  allowed-commands:
+    - "qqverify"
+    - "qqyz"
+    - "qqbotauth:qqverify"
+    - "qqbotauth:qqyz"
+  reminder-seconds: 15
+  dialog-enabled: true
+  transfer:
+    enabled: true
+    verified-server: "lobby"
+    delay-seconds: 5
+
+messages:
+  prefix: ""
+  authme-required: "<red>请先完成登录，再进行 QQ 验证。</red>"
+  checking: "<yellow>正在检查 QQ 绑定状态，请稍候……</yellow>"
+  service-unavailable: "<red>QQ 验证服务暂时不可用，请联系服务器管理员。</red>"
+  already-verified: "<green>您的 CCTStudio 账号已完成 QQ 验证。</green>"
+  verification-instructions: "<yellow>请加入 QQ 群 <aqua><group></aqua>，然后发送：<white>@CCTStudio Bot 绑定 <code></white></yellow>"
+  code-created: "<yellow>您的验证码是 <green><code></green>，剩余有效时间 <expire>。</yellow>"
+  code-expired: "<red>验证码已过期，您即将断开连接。</red>"
+  verification-timeout: "<red>QQ 验证超时，请重新进入服务器后再次验证。</red>"
+  verification-success: "<green>绑定成功！正在准备前往大厅。</green>"
+  transfer-countdown-title: "<green>验证完毕，传送大厅</green>"
+  transfer-countdown-subtitle: "<gray><seconds> 秒后传送</gray>"
+  transfer-now: "<green>验证完成，正在前往大厅……</green>"
+  command-blocked: "<red>请先完成 QQ 验证，再使用其他指令。</red>"
+  interaction-blocked: "<yellow>请先完成 QQ 验证。</yellow>"
+  dialog-title: "<aqua>QQ 群验证</aqua>"
+  dialog-body: "<yellow>请加入 QQ 群 <aqua><group></aqua>，在群内发送：</yellow>\n\n<white>@CCTStudio Bot 绑定 <green><code></green></white>\n\n<gray>验证码剩余有效时间 <expire>，仅可使用一次。</gray>"
+  dialog-refresh: "重新生成"
+  dialog-check: "检查绑定"
+  reload-success: "<green>配置已重新加载。</green>"
+  reload-failed: "<red>配置重载失败，请查看控制台。</red>"

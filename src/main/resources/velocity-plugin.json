@@ -1,0 +1,9 @@
+{
+  "id": "qqbotauthgate",
+  "name": "QQBotAuth Gate",
+  "version": "${version}",
+  "description": "QQBotAuth 的 Velocity 转服门禁；QQ Bot 本体只运行在 Paper 端",
+  "authors": ["GouC", "CCTStudio"],
+  "dependencies": [],
+  "main": "cn.cctstudio.qqbotauth.velocity.QQBotAuthVelocityPlugin"
+}
