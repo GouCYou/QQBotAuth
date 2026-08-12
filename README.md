@@ -105,7 +105,7 @@ command-blocked-message=请先完成登录和 QQ 验证，再使用其他指令�
 ```
 
 `auth-server` 必须与 `velocity.toml` 中的登录服名称完全一致。
-未完成 QQ 验证时，Velocity 会拒绝白名单以外的代理及后端指令，并从 1.13+ 客户端命令树中移除它们。因此 `/server` 不会执行，按 Tab 也不会显示服务器列表。`allowed-commands` 使用英文逗号分隔；默认仅保留 AuthMe 登录、注册、邮箱、验证码以及 QQBotAuth 验证指令。
+未完成 QQ 验证时，Paper 会安全取消签名聊天；Velocity 会拒绝白名单以外的代理及后端指令，并从 1.13+ 客户端命令树中移除它们。因此 `/server` 不会执行，按 Tab 也不会显示服务器列表。聊天拦截没有关闭开关。`allowed-commands` 使用英文逗号分隔；默认仅保留 AuthMe 登录、注册、邮箱、验证码以及 QQBotAuth 验证指令。
 
 不要使用 PlugMan 一类工具热卸载包含网络线程和 JDBC 驱动的插件；生产环境应完整重启 Paper/Velocity。
 
@@ -224,7 +224,7 @@ plugins/QQBotAuth/bindings.db
 
 若验证码到期时仍未成功写入绑定，插件会立即销毁验证码并在 Paper 主线程踢出玩家。重新进入服务器后才会获得新验证码。
 
-未验证时可按配置禁止移动和交互。启用 `block-server-command` 后，Paper 会仅放行 `player.allowed-commands`，Velocity 也会拦截其余代理指令并隐藏命令树。跨服请求还会在 `ServerPreConnectEvent` 再检查一次，因此直接输入或补全 `/server lobby` 都无法绕过。
+未验证时聊天始终由 Paper 的当前签名聊天事件阻止。移动和交互限制还会覆盖背包点击、拖动、物品拾取、丢弃、切换、食用、书本编辑、攻击、钓鱼、桶和盔甲架操作；玩家同时不会受到伤害或掉饥饿值。Paper 仅放行 `player.allowed-commands`，Velocity 也会拦截其余代理指令并隐藏命令树。跨服请求还会在 `ServerPreConnectEvent` 再检查一次，因此直接输入或补全 `/server lobby` 都无法绕过。
 
 ## 指令
 

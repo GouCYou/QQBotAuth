@@ -8,6 +8,7 @@ import cn.cctstudio.qqbotauth.verification.BindingService;
 import cn.cctstudio.qqbotauth.verification.VerificationCode;
 import cn.cctstudio.qqbotauth.verification.VerificationService;
 import cn.cctstudio.qqbotauth.util.HumanDurationFormatter;
+import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -16,14 +17,31 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerEditBookEvent;
+import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerPickupArrowEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerShearEntityEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.projectiles.ProjectileSource;
+import org.bukkit.entity.Projectile;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -361,6 +379,20 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (event.getWhoClicked() instanceof Player player && blockedInteraction(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if (event.getWhoClicked() instanceof Player player && blockedInteraction(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
         if (blockedInteraction(event.getPlayer())) {
             event.setCancelled(true);
@@ -382,10 +414,124 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDamage(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player player && blockedInteraction(player)) {
+    public void onDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player && isAwaitingVerification(player.getUniqueId())) {
             event.setCancelled(true);
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDamageEntity(EntityDamageByEntityEvent event) {
+        Player attacker = null;
+        if (event.getDamager() instanceof Player player) {
+            attacker = player;
+        } else if (event.getDamager() instanceof Projectile projectile) {
+            ProjectileSource shooter = projectile.getShooter();
+            if (shooter instanceof Player player) {
+                attacker = player;
+            }
+        }
+        if (attacker != null && blockedInteraction(attacker)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onFoodLevelChange(FoodLevelChangeEvent event) {
+        if (event.getEntity() instanceof Player player && isAwaitingVerification(player.getUniqueId())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPickupItem(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player && blockedInteraction(player)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPickupArrow(PlayerPickupArrowEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onHeldItem(PlayerItemHeldEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSwapHands(PlayerSwapHandItemsEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onConsume(PlayerItemConsumeEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEditBook(PlayerEditBookEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onArmorStand(PlayerArmorStandManipulateEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBucketFill(PlayerBucketFillEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBucketEmpty(PlayerBucketEmptyEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onFish(PlayerFishEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onShear(PlayerShearEntityEvent event) {
+        if (blockedInteraction(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onChat(AsyncChatEvent event) {
+        if (!isAwaitingVerification(event.getPlayer().getUniqueId())) {
+            return;
+        }
+        event.setCancelled(true);
+        runMain(() -> {
+            if (event.getPlayer().isOnline()
+                    && isAwaitingVerification(event.getPlayer().getUniqueId())) {
+                event.getPlayer().sendMessage(messages.message("chat-blocked"));
+            }
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
