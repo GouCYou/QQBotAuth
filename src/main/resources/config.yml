@@ -88,7 +88,7 @@ messages:
   command-blocked: "<red>请先完成 QQ 验证</red>"
   chat-blocked: "<red>请先完成 QQ 验证</red>"
   interaction-blocked: "<yellow>请先完成 QQ 验证。</yellow>"
-  dialog-title: "<aqua>QQ 群验证</aqua>"
+  dialog-title: "<aqua>绑定 QQ</aqua>"
   dialog-body: "<yellow>请加入 QQ 群 <aqua><group></aqua>，在群内发送：</yellow>\n\n<white>@CCTStudio Bot 绑定 <green><code></green></white>\n\n<gray>验证码剩余有效时间 <expire></gray>"
   dialog-refresh: "重新生成"
   dialog-check: "检查绑定"
