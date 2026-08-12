@@ -105,7 +105,7 @@ command-blocked-message=请先完成登录和 QQ 验证，再使用其他指令�
 ```
 
 `auth-server` 必须与 `velocity.toml` 中的登录服名称完全一致。
-未完成 QQ 验证时，Paper 会安全取消签名聊天；Velocity 会拒绝白名单以外的代理及后端指令，并从 1.13+ 客户端命令树中移除它们。因此 `/server` 不会执行，按 Tab 也不会显示服务器列表。聊天拦截没有关闭开关。`allowed-commands` 使用英文逗号分隔；默认仅保留 AuthMe 登录、注册、邮箱、验证码以及 QQBotAuth 验证指令。
+未完成 QQ 验证时，Paper 会静默取消签名聊天；Velocity 会静默拒绝白名单以外的代理及后端指令，并从 1.13+ 客户端命令树中移除它们。因此 `/server` 不会执行，按 Tab 也不会显示服务器列表。聊天拦截没有关闭开关。`allowed-commands` 使用英文逗号分隔；默认仅保留 AuthMe 登录、注册、邮箱、验证码以及 QQBotAuth 验证指令。配置中的违规提示字段暂时保留，但拦截时不会发送。
 
 不要使用 PlugMan 一类工具热卸载包含网络线程和 JDBC 驱动的插件；生产环境应完整重启 Paper/Velocity。
 

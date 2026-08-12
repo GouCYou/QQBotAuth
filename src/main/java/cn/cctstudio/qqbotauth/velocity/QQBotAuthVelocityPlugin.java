@@ -15,8 +15,6 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -92,8 +90,6 @@ public final class QQBotAuthVelocityPlugin {
                 || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) {
             return;
         }
-        event.getPlayer().sendMessage(Component.text(
-                unverifiedMessage, NamedTextColor.RED));
         proxy.getServer(authServer).ifPresentOrElse(
                 login -> event.setResult(ServerPreConnectEvent.ServerResult.allowed(login)),
                 () -> event.setResult(ServerPreConnectEvent.ServerResult.denied())
@@ -117,7 +113,6 @@ public final class QQBotAuthVelocityPlugin {
         }
 
         event.setResult(CommandExecuteEvent.CommandResult.denied());
-        player.sendMessage(Component.text(commandBlockedMessage, NamedTextColor.RED));
     }
 
     @Subscribe(priority = Short.MIN_VALUE)

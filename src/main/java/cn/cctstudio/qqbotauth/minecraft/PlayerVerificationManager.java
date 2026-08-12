@@ -161,7 +161,7 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             }
             if (failure != null) {
                 plugin.getLogger().warning("[QQBot] Failed to check binding: " + rootMessage(failure));
-                player.sendMessage(messages.message("interaction-blocked"));
+                player.sendMessage(messages.message("service-unavailable"));
                 states.put(playerId, PlayerVerificationState.UNVERIFIED);
                 return;
             }
@@ -526,12 +526,6 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             return;
         }
         event.setCancelled(true);
-        runMain(() -> {
-            if (event.getPlayer().isOnline()
-                    && isAwaitingVerification(event.getPlayer().getUniqueId())) {
-                event.getPlayer().sendMessage(messages.message("chat-blocked"));
-            }
-        });
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -546,7 +540,6 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             return;
         }
         event.setCancelled(true);
-        event.getPlayer().sendMessage(messages.message("command-blocked"));
     }
 
     @EventHandler

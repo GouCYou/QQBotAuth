@@ -37,14 +37,14 @@ public final class QQReplyMessages {
         values.put("unknown-command", "没有找到这个指令。发送“帮助”查看可用指令。");
         values.put("operation-failed", "操作失败，请稍后重试。若问题持续，请联系服务器管理员。");
         values.put("bind-usage", "用法：绑定 <游戏内显示的验证码>");
-        values.put("bind-success", "绑定成功！CCTStudio 账号：<minecraft>。现在可以返回游戏，系统将自动放行。");
+        values.put("bind-success", "绑定成功！CCTStudio 账号：<minecraft>。现在可正常游戏。");
         values.put("bind-invalid-code", "验证码无效或已过期，请重新进入服务器获取新的验证码。");
-        values.put("bind-qq-already-bound", "这个 QQ 账号已经绑定了其他 CCTStudio 账号，请先发送“解绑”。");
+        values.put("bind-qq-already-bound", "这个 QQ 账号已经绑定了其他 CCTStudio 账号，请先发送 “解绑”。");
         values.put("bind-minecraft-already-bound", "这个 CCTStudio 账号已经完成绑定。");
         values.put("bind-code-used", "验证码已经被使用，请重新进入服务器获取新的验证码。");
         values.put("query-bound", "已绑定 CCTStudio 账号：<minecraft>");
         values.put("query-unbound", "当前 QQ 尚未绑定 CCTStudio 账号。");
-        values.put("unbind-success", "解绑成功。下次进入服务器时需要重新完成 QQ 验证。");
+        values.put("unbind-success", "解绑成功。");
         values.put("unbind-not-bound", "当前 QQ 没有可解除的绑定。");
         return Map.copyOf(values);
     }
