@@ -86,7 +86,7 @@ public final class CommandManager {
         }
     }
 
-    private ParsedCommand parse(String raw) {
+    static ParsedCommand parse(String raw) {
         if (raw == null) {
             return null;
         }
@@ -99,10 +99,18 @@ public final class CommandManager {
         }
         String[] parts = content.split("\\s+");
         List<String> arguments = new ArrayList<>();
+        String commandName = parts[0];
+
+        // Players commonly omit the space in “绑定 ABC123”. Only split the exact
+        // Chinese bind prefix so unrelated command names keep their original meaning.
+        if (commandName.startsWith("绑定") && commandName.length() > "绑定".length()) {
+            arguments.add(commandName.substring("绑定".length()));
+            commandName = "绑定";
+        }
         for (int i = 1; i < parts.length; i++) {
             arguments.add(parts[i]);
         }
-        return new ParsedCommand(parts[0], List.copyOf(arguments));
+        return new ParsedCommand(commandName, List.copyOf(arguments));
     }
 
     private static String normalize(String name) {
@@ -117,6 +125,6 @@ public final class CommandManager {
         return root.getMessage() == null ? root.getClass().getSimpleName() : root.getMessage();
     }
 
-    private record ParsedCommand(String name, List<String> arguments) {
+    record ParsedCommand(String name, List<String> arguments) {
     }
 }
