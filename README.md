@@ -33,7 +33,7 @@ AuthMe LoginEvent → PlayerVerificationManager → SQLite / MySQL
 
 - `QQBotClient`：异步获取 Gateway、处理 Hello、Identify/Resume、心跳、READY、断线重连和主动关闭。
 - `QQApiClient`：获取及缓存 AccessToken，提前 60 秒刷新，并统一调用群聊/单聊 HTTP API。
-- `QQEventDispatcher`：解析官方群消息事件并做消息去重；群成员加入/退出类型仅保留为 TODO 扩展点，不解析官方尚未定义的普通 QQ 群成员事件。
+- `QQEventDispatcher`：解析官方群消息和 `GROUP_MEMBER_REMOVE` 事件，并对消息做去重。
 - `QQGroupRegistry`：发现事件中的 `group_openid`，并在执行指令前应用群来源白名单。
 - `CommandManager`：解析 `@机器人 绑定 ABC123`，分发到独立命令对象。
 - `VerificationService`：生成单次、限时验证码。
@@ -41,6 +41,7 @@ AuthMe LoginEvent → PlayerVerificationManager → SQLite / MySQL
 - `AuthMeHook`：只在 AuthMe 登录成功或会话恢复后启动 QQ 验证。
 - `PlayerVerificationManager`：限制未验证玩家、展示 Dialog、提示和倒计时。
 - `ServerTransferService`：通过代理插件消息发布状态并转移到大厅。
+- `VelocityControlClient/Server`：通过仅限本机回环地址的鉴权控制通道，在解绑后从整个代理网络踢出对应 UUID。
 
 网络请求、WebSocket 回调和 JDBC 操作均不在 Minecraft 主线程执行。所有 Player、Dialog、Title、插件消息和 Bukkit API 操作都会切回 Paper 主线程。
 
@@ -51,7 +52,7 @@ AuthMe LoginEvent → PlayerVerificationManager → SQLite / MySQL
 3. 在“开发设置/基础设置”查看 AppID 和 AppSecret。
 4. 在“功能配置”中为群聊添加需要展示的指令，例如“绑定”“查询”“解绑”“帮助”。平台上的指令配置只负责 QQ 客户端入口，实际逻辑由本插件执行。
 5. 为生产环境配置服务器公网出口 IP 白名单。腾讯当前文档要求启用白名单的机器人只能从白名单 IP 连接 WebSocket 和调用 OpenAPI。
-6. 确认机器人具有群消息场景权限。插件订阅 `GROUP_AND_C2C_EVENT (1<<25)`，主要处理 `GROUP_AT_MESSAGE_CREATE`。
+6. 确认机器人具有群消息和群成员事件权限。插件订阅 `GROUP_AND_C2C_EVENT (1<<25)` 与 `GROUP_MEMBER_EVENT (1<<24)`，处理 `GROUP_AT_MESSAGE_CREATE` 和 `GROUP_MEMBER_REMOVE`。
 
 官方资料：
 
@@ -59,6 +60,7 @@ AuthMe LoginEvent → PlayerVerificationManager → SQLite / MySQL
 - [获取 AccessToken](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/access-token.html)
 - [WebSocket 接入](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/event-emit/websocket.html)
 - [群 @ 机器人消息事件](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_at_message_create.html)
+- [群成员退出事件](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_member_remove.html)
 - [发送群聊消息](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html)
 
 ### 关于 Token
@@ -102,9 +104,15 @@ block-commands=true
 hide-command-suggestions=true
 allowed-commands=login,l,register,reg,email,captcha,qqverify,qqyz,authme:login,authme:l,authme:register,authme:reg,authme:email,authme:captcha,qqbotauth:qqverify,qqbotauth:qqyz
 command-blocked-message=请先完成登录和 QQ 验证，再使用其他指令。
+control-enabled=true
+control-bind-address=127.0.0.1
+control-port=25579
+control-secret=
+unbound-kick-message=您的 QQ 绑定已解除，请重新进入登录服完成验证。
 ```
 
 `auth-server` 必须与 `velocity.toml` 中的登录服名称完全一致。
+解绑跨服踢出还需要在 Paper 的 `velocity-control.secret` 与 Velocity 的 `control-secret` 填写同一个至少 24 位的随机字符串。控制监听强制绑定回环地址，密钥不会输出到日志；端口默认都是 `25579`。不使用 Velocity 或没有正确配置这两个字段时，数据库仍会解绑，但插件无法立即踢出正在其他子服游玩的玩家。
 未完成 QQ 验证时，Paper 会静默取消签名聊天；Velocity 会静默拒绝白名单以外的代理及后端指令，并从 1.13+ 客户端命令树中移除它们。因此 `/server` 不会执行，按 Tab 也不会显示服务器列表。聊天拦截没有关闭开关。`allowed-commands` 使用英文逗号分隔；默认仅保留 AuthMe 登录、注册、邮箱、验证码以及 QQBotAuth 验证指令。配置中的违规提示字段暂时保留，但拦截时不会发送。
 
 不要使用 PlugMan 一类工具热卸载包含网络线程和 JDBC 驱动的插件；生产环境应完整重启 Paper/Velocity。
@@ -156,6 +164,13 @@ player:
     enabled: true
     verified-server: lobby
     delay-seconds: 5
+
+velocity-control:
+  enabled: true
+  host: 127.0.0.1
+  port: 25579
+  secret: "两端相同的至少24位随机字符串"
+  connect-timeout-millis: 2000
 ```
 
 验证码字符集为数字 `2-9` 和大写字母，排除了 `O/0/I/1`。一个 UUID 同时只有一个有效验证码，默认两分钟过期。绑定成功后立即失效；未在时限内完成绑定时会销毁验证码并以可配置的红色原因踢出玩家，不会自动生成新验证码。
@@ -179,6 +194,7 @@ QQBOTAUTH_MYSQL_USERNAME
 QQBOTAUTH_MYSQL_PASSWORD
 QQBOTAUTH_MYSQL_USE_SSL
 QQBOTAUTH_MYSQL_ALLOW_PUBLIC_KEY_RETRIEVAL
+QQBOTAUTH_VELOCITY_CONTROL_SECRET
 ```
 
 推荐在 systemd 或容器编排的秘密管理中提供 AppSecret 和 MySQL 密码。
@@ -222,6 +238,8 @@ plugins/QQBotAuth/bindings.db
 6. 数据库写入成功后，游戏主线程显示绿色成功 Title 和倒计时。
 7. 倒计时结束后，插件先向 Velocity 发布在线验证状态，再将玩家转移到配置的大厅。
 
+绑定玩家退出验证群或被移出群聊时，Gateway 会推送 `GROUP_MEMBER_REMOVE`。插件只处理 `allowed-group-openids` 白名单中的事件：原子删除对应绑定、让机器人发送 `qq-messages.member-left-unbound`，并通知 Velocity 将该 UUID 从整个代理网络踢出。玩家主动发送“解绑”时也会执行同样的跨服踢出。若玩家当时不在线，则没有玩家可踢，但绑定仍会删除，下次进入必须重新验证；普通 Minecraft 下线不会自动解绑。
+
 若验证码到期时仍未成功写入绑定，插件会立即销毁验证码并在 Paper 主线程踢出玩家。重新进入服务器后才会获得新验证码。
 
 未验证时聊天始终由 Paper 的当前签名聊天事件阻止。移动和交互限制还会覆盖背包点击、拖动、物品拾取、丢弃、切换、食用、书本编辑、攻击、钓鱼、桶和盔甲架操作；玩家同时不会受到伤害或掉饥饿值。Paper 仅放行 `player.allowed-commands`，Velocity 也会拦截其余代理指令并隐藏命令树。跨服请求还会在 `ServerPreConnectEvent` 再检查一次，因此直接输入或补全 `/server lobby` 都无法绕过。
@@ -236,6 +254,11 @@ plugins/QQBotAuth/bindings.db
 - `/qqverify groups`：管理员查看本次运行期间观察到的 `group_openid` 及其白名单状态。
 - `/qqverify reload`：重载消息、验证、玩家限制和 QQ 连接配置。数据库配置变更需要重启。
 - `/qqverify migrate mysql`：后台迁移 SQLite 数据到 MySQL。
+- `/qqverify unbind player <玩家名或UUID>`：管理员按 Minecraft 身份解绑，并让 Velocity 踢出在线玩家。
+- `/qqverify unbind qq <member_openid> [group_openid]`：管理员按 QQ 身份解绑；同一成员在多个群有记录时必须指定群。
+- `/qqverify lookup player <玩家名或UUID>`：管理员查询玩家绑定详情。
+- `/qqverify lookup qq <member_openid> [group_openid]`：管理员查询 QQ 身份对应的绑定详情。
+- `/qqverify bindings [页码]`：管理员分页查看全部绑定，每页八条。
 
 权限：
 
@@ -290,6 +313,7 @@ plugins/QQBotAuth/bindings.db
 - `4914`（机器人下架）和 `4915`（机器人封禁）会停止自动重连，避免无意义请求。
 - QQ 消息以 `msg_id + message_scene.msg_idx` 去重，防止官方重复投递导致重复执行。
 - Velocity 仅接受来自名为 `login` 的后端、且 UUID 与当前连接玩家一致的状态消息。
+- 解绑控制只监听本机回环地址，并校验 Paper/Velocity 两端共享的随机密钥；密钥不会写入日志。
 - SQLite 到 MySQL 迁移不会删除原数据库，切换前请额外备份 `plugins/QQBotAuth/`。
 
 当前 Velocity 门禁默认认证服务器名是 `login`，与 CCTStudio 现有 `velocity.toml` 一致。如果未来修改代理中的登录服名称，请同步修改 `plugins/qqbotauthgate/config.properties` 并重启 Velocity。

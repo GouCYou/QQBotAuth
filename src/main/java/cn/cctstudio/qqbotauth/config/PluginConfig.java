@@ -9,7 +9,8 @@ public record PluginConfig(
         QQReplyMessages qqMessages,
         Verification verification,
         Database database,
-        Player player
+        Player player,
+        VelocityControl velocityControl
 ) {
     public record QQ(
             boolean enabled,
@@ -61,6 +62,7 @@ public record PluginConfig(
     }
 
     public record Player(
+            boolean forceVerification,
             boolean blockMovement,
             boolean blockInteraction,
             boolean blockServerCommand,
@@ -72,5 +74,17 @@ public record PluginConfig(
     }
 
     public record Transfer(boolean enabled, String verifiedServer, int delaySeconds) {
+    }
+
+    public record VelocityControl(
+            boolean enabled,
+            String host,
+            int port,
+            String secret,
+            int connectTimeoutMillis
+    ) {
+        public boolean isConfigured() {
+            return enabled && !secret.isBlank();
+        }
     }
 }

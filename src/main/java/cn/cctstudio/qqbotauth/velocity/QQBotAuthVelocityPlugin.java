@@ -7,8 +7,11 @@ import com.velocitypowered.api.event.command.PlayerAvailableCommandsEvent;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
+import com.velocitypowered.api.event.player.PlayerChatEvent;
 import com.velocitypowered.api.event.player.TabCompleteEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -16,6 +19,8 @@ import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.slf4j.Logger;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -39,10 +44,22 @@ public final class QQBotAuthVelocityPlugin {
     private String authServer = "login";
     private String unverifiedMessage = "请先在登录服完成 QQ 验证。";
     private String commandBlockedMessage = "请先完成登录和 QQ 验证，再使用其他指令。";
+    private String chatBlockedMessage = "未进行绑定，请前往官网个人中心绑定 Discord，或加入 QQ 群绑定 QQ 后再发言。";
+    private String serverReminderMessage = "您尚未绑定 QQ 或 Discord，当前无法发言及购买会员。请前往官网绑定 Discord，或加入 QQ 群绑定 QQ。";
+    private boolean forceVerification = true;
+    private static final String DEFAULT_RESTRICTED_CHAT_COMMANDS =
+            "shout,msg,tell,w,whisper,reply,r,me,say,broadcast,bc,emsg,etell,ewhisper,ereply,eme";
+    private Set<String> restrictedChatCommands = parseCommands(DEFAULT_RESTRICTED_CHAT_COMMANDS);
     private boolean blockCommands = true;
     private boolean hideCommandSuggestions = true;
     private CommandGatePolicy commandGatePolicy = CommandGatePolicy.fromCsv(
             CommandGatePolicy.DEFAULT_ALLOWED_COMMANDS);
+    private boolean controlEnabled = true;
+    private String controlBindAddress = "127.0.0.1";
+    private int controlPort = 25579;
+    private String controlSecret = "";
+    private String unboundKickMessage = "您的 QQ 绑定已解除，请重新进入登录服完成验证。";
+    private VelocityControlServer controlServer;
 
     @Inject
     public QQBotAuthVelocityPlugin(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
@@ -55,7 +72,16 @@ public final class QQBotAuthVelocityPlugin {
     public void onInitialize(ProxyInitializeEvent event) {
         loadConfiguration();
         proxy.getChannelRegistrar().register(STATE_CHANNEL);
+        startControlServer();
         logger.info("[QQBot] Velocity transfer gate enabled; auth server is {}", authServer);
+    }
+
+    @Subscribe
+    public void onShutdown(ProxyShutdownEvent event) {
+        if (controlServer != null) {
+            controlServer.close();
+            controlServer = null;
+        }
     }
 
     @Subscribe
@@ -85,6 +111,7 @@ public final class QQBotAuthVelocityPlugin {
 
     @Subscribe
     public void onServerPreConnect(ServerPreConnectEvent event) {
+        if (!forceVerification) return;
         RegisteredServer target = event.getOriginalServer();
         if (authServer.equalsIgnoreCase(target.getServerInfo().getName())
                 || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) {
@@ -98,12 +125,20 @@ public final class QQBotAuthVelocityPlugin {
 
     @Subscribe(priority = Short.MIN_VALUE)
     public void onCommandExecute(CommandExecuteEvent event) {
-        if (!blockCommands
-                || !(event.getCommandSource() instanceof Player player)
-                || verifiedOnlinePlayers.contains(player.getUniqueId())
-                || commandGatePolicy.allows(event.getCommand())) {
+        if (!(event.getCommandSource() instanceof Player player)
+                || verifiedOnlinePlayers.contains(player.getUniqueId())) {
             return;
         }
+
+        if (!forceVerification) {
+            if (isRestrictedChatCommand(event.getCommand())) {
+                event.setResult(CommandExecuteEvent.CommandResult.denied());
+                player.sendMessage(red(chatBlockedMessage));
+            }
+            return;
+        }
+
+        if (!blockCommands || commandGatePolicy.allows(event.getCommand())) return;
 
         // Velocity cannot safely consume commands containing signed message arguments.
         // Forward those unchanged so the Paper-side gate can cancel them without breaking chat signing.
@@ -117,7 +152,8 @@ public final class QQBotAuthVelocityPlugin {
 
     @Subscribe(priority = Short.MIN_VALUE)
     public void onAvailableCommands(PlayerAvailableCommandsEvent event) {
-        if (!hideCommandSuggestions || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) {
+        if (!forceVerification || !hideCommandSuggestions
+                || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) {
             return;
         }
         event.getRootNode().getChildren().removeIf(node -> !commandGatePolicy.allows(node.getName()));
@@ -125,7 +161,8 @@ public final class QQBotAuthVelocityPlugin {
 
     @Subscribe(priority = Short.MIN_VALUE)
     public void onLegacyTabComplete(TabCompleteEvent event) {
-        if (!hideCommandSuggestions || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) {
+        if (!forceVerification || !hideCommandSuggestions
+                || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) {
             return;
         }
         String partial = event.getPartialMessage().stripLeading();
@@ -137,6 +174,22 @@ public final class QQBotAuthVelocityPlugin {
             return;
         }
         event.getSuggestions().removeIf(suggestion -> !commandGatePolicy.allows(suggestion));
+    }
+
+    @Subscribe(priority = Short.MIN_VALUE)
+    public void onChat(PlayerChatEvent event) {
+        if (forceVerification || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) return;
+        event.setResult(PlayerChatEvent.ChatResult.denied());
+        event.getPlayer().sendMessage(red(chatBlockedMessage));
+    }
+
+    @Subscribe
+    public void onServerPostConnect(ServerPostConnectEvent event) {
+        if (forceVerification || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) return;
+        boolean onAuthServer = event.getPlayer().getCurrentServer()
+                .map(connection -> authServer.equalsIgnoreCase(connection.getServerInfo().getName()))
+                .orElse(false);
+        if (!onAuthServer) event.getPlayer().sendMessage(red(serverReminderMessage));
     }
 
     @Subscribe
@@ -155,11 +208,20 @@ public final class QQBotAuthVelocityPlugin {
                 }
             }
             boolean changed = putDefault(properties, "auth-server", authServer);
+            changed |= putDefault(properties, "force-verification", Boolean.toString(forceVerification));
             changed |= putDefault(properties, "unverified-message", unverifiedMessage);
+            changed |= putDefault(properties, "chat-blocked-message", chatBlockedMessage);
+            changed |= putDefault(properties, "server-reminder-message", serverReminderMessage);
+            changed |= putDefault(properties, "restricted-chat-commands", DEFAULT_RESTRICTED_CHAT_COMMANDS);
             changed |= putDefault(properties, "block-commands", Boolean.toString(blockCommands));
             changed |= putDefault(properties, "hide-command-suggestions", Boolean.toString(hideCommandSuggestions));
             changed |= putDefault(properties, "allowed-commands", CommandGatePolicy.DEFAULT_ALLOWED_COMMANDS);
             changed |= putDefault(properties, "command-blocked-message", commandBlockedMessage);
+            changed |= putDefault(properties, "control-enabled", Boolean.toString(controlEnabled));
+            changed |= putDefault(properties, "control-bind-address", controlBindAddress);
+            changed |= putDefault(properties, "control-port", Integer.toString(controlPort));
+            changed |= putDefault(properties, "control-secret", controlSecret);
+            changed |= putDefault(properties, "unbound-kick-message", unboundKickMessage);
             if (changed) {
                 try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
                     properties.store(writer, "QQBotAuth Velocity gate");
@@ -167,7 +229,14 @@ public final class QQBotAuthVelocityPlugin {
             }
 
             authServer = properties.getProperty("auth-server", authServer).trim();
+            forceVerification = Boolean.parseBoolean(properties.getProperty("force-verification", "true"));
             unverifiedMessage = properties.getProperty("unverified-message", unverifiedMessage).trim();
+            chatBlockedMessage = properties.getProperty(
+                    "chat-blocked-message", chatBlockedMessage).trim();
+            serverReminderMessage = properties.getProperty(
+                    "server-reminder-message", serverReminderMessage).trim();
+            restrictedChatCommands = parseCommands(properties.getProperty(
+                    "restricted-chat-commands", DEFAULT_RESTRICTED_CHAT_COMMANDS));
             commandBlockedMessage = properties.getProperty(
                     "command-blocked-message", commandBlockedMessage).trim();
             blockCommands = Boolean.parseBoolean(properties.getProperty("block-commands", "true"));
@@ -175,17 +244,98 @@ public final class QQBotAuthVelocityPlugin {
                     properties.getProperty("hide-command-suggestions", "true"));
             commandGatePolicy = CommandGatePolicy.fromCsv(properties.getProperty(
                     "allowed-commands", CommandGatePolicy.DEFAULT_ALLOWED_COMMANDS));
+            controlEnabled = Boolean.parseBoolean(properties.getProperty("control-enabled", "true"));
+            controlBindAddress = properties.getProperty(
+                    "control-bind-address", controlBindAddress).trim();
+            controlPort = parsePort(properties.getProperty("control-port", "25579"));
+            controlSecret = properties.getProperty("control-secret", "").trim();
+            unboundKickMessage = properties.getProperty(
+                    "unbound-kick-message", unboundKickMessage).trim();
             if (authServer.isBlank()) {
                 throw new IllegalArgumentException("auth-server cannot be blank");
+            }
+            if (controlEnabled && !controlSecret.isBlank() && controlSecret.length() < 24) {
+                throw new IllegalArgumentException("control-secret must contain at least 24 characters");
             }
         } catch (IOException | IllegalArgumentException exception) {
             logger.error("[QQBot] Could not load Velocity gate configuration; using safe defaults", exception);
             authServer = "login";
+            forceVerification = true;
             unverifiedMessage = "请先在登录服完成 QQ 验证。";
             commandBlockedMessage = "请先完成登录和 QQ 验证，再使用其他指令。";
             blockCommands = true;
             hideCommandSuggestions = true;
             commandGatePolicy = CommandGatePolicy.fromCsv(CommandGatePolicy.DEFAULT_ALLOWED_COMMANDS);
+            controlEnabled = false;
+        }
+    }
+
+    private void startControlServer() {
+        if (!controlEnabled) {
+            logger.warn("[QQBot] Velocity unbind control is disabled");
+            return;
+        }
+        if (controlSecret.isBlank()) {
+            logger.warn("[QQBot] Velocity unbind control is disabled because control-secret is not configured");
+            return;
+        }
+        try {
+            controlServer = new VelocityControlServer(
+                    this,
+                    proxy,
+                    logger,
+                    verifiedOnlinePlayers,
+                    controlBindAddress,
+                    controlPort,
+                    controlSecret,
+                    forceVerification,
+                    unboundKickMessage
+            );
+            controlServer.start();
+            logger.info("[QQBot] Velocity unbind control is listening on loopback port {}", controlPort);
+        } catch (IOException | RuntimeException exception) {
+            controlServer = null;
+            logger.error("[QQBot] Could not start Velocity unbind control", exception);
+        }
+    }
+
+    private boolean isRestrictedChatCommand(String raw) {
+        String command = raw == null ? "" : raw.stripLeading().toLowerCase(java.util.Locale.ROOT);
+        String[] parts = command.split("\\s+", 3);
+        if (parts.length == 0) return false;
+        String root = parts[0];
+        int namespace = root.indexOf(':');
+        if (namespace >= 0) root = root.substring(namespace + 1);
+        if (restrictedChatCommands.contains(root)) return true;
+        if (parts.length < 2) return false;
+        return (root.equals("cmi") && restrictedChatCommands.contains(parts[1]))
+                || (root.equals("cct") && parts[1].equals("shout"));
+    }
+
+    private static Set<String> parseCommands(String csv) {
+        Set<String> commands = ConcurrentHashMap.newKeySet();
+        for (String value : csv.split(",")) {
+            String command = value.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!command.isEmpty() && command.chars().noneMatch(Character::isWhitespace)) {
+                commands.add(command);
+            }
+        }
+        return Set.copyOf(commands);
+    }
+
+    private static Component red(String value) {
+        return Component.text(value, NamedTextColor.RED);
+    }
+
+    private static int parsePort(String raw) {
+        try {
+            int value = Integer.parseInt(raw.trim());
+            if (value < 1 || value > 65_535) {
+                throw new IllegalArgumentException("control-port must be between 1 and 65535");
+            }
+            return value;
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("control-port must be an integer", exception);
         }
     }
 

@@ -109,6 +109,7 @@ public final class ConfigManager {
                         "player.transfer.delay-seconds")
         );
         PluginConfig.Player player = new PluginConfig.Player(
+                config.getBoolean("player.force-verification", true),
                 config.getBoolean("player.block-movement", true),
                 config.getBoolean("player.block-interaction", true),
                 config.getBoolean("player.block-server-command", true),
@@ -117,7 +118,21 @@ public final class ConfigManager {
                 config.getBoolean("player.dialog-enabled", true),
                 transfer
         );
-        return new PluginConfig(qq, qqMessages, verification, database, player);
+        PluginConfig.VelocityControl velocityControl = new PluginConfig.VelocityControl(
+                config.getBoolean("velocity-control.enabled", true),
+                config.getString("velocity-control.host", "127.0.0.1").trim(),
+                bounded(config.getInt("velocity-control.port", 25579), 1, 65_535,
+                        "velocity-control.port"),
+                env("QQBOTAUTH_VELOCITY_CONTROL_SECRET",
+                        config.getString("velocity-control.secret", "")).trim(),
+                bounded(config.getInt("velocity-control.connect-timeout-millis", 2000),
+                        250, 10_000, "velocity-control.connect-timeout-millis")
+        );
+        if (velocityControl.enabled() && !velocityControl.secret().isBlank()
+                && velocityControl.secret().length() < 24) {
+            throw new IllegalArgumentException("velocity-control.secret must contain at least 24 characters");
+        }
+        return new PluginConfig(qq, qqMessages, verification, database, player, velocityControl);
     }
 
     private String env(String name, String fallback) {

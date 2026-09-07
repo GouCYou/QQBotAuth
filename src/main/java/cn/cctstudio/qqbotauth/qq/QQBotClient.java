@@ -32,7 +32,9 @@ public final class QQBotClient implements WebSocket.Listener, AutoCloseable {
     private static final int OP_INVALID_SESSION = 9;
     private static final int OP_HELLO = 10;
     private static final int OP_HEARTBEAT_ACK = 11;
+    private static final int GROUP_MEMBER_EVENT = 1 << 24;
     private static final int GROUP_AND_C2C_EVENT = 1 << 25;
+    private static final int INTENTS = GROUP_MEMBER_EVENT | GROUP_AND_C2C_EVENT;
 
     private final PluginConfig.QQ config;
     private final QQApiClient apiClient;
@@ -297,7 +299,7 @@ public final class QQBotClient implements WebSocket.Listener, AutoCloseable {
     private void sendIdentify(WebSocket socket, String accessToken) {
         JsonObject data = new JsonObject();
         data.addProperty("token", "QQBot " + accessToken);
-        data.addProperty("intents", GROUP_AND_C2C_EVENT);
+        data.addProperty("intents", INTENTS);
         var shard = new com.google.gson.JsonArray();
         shard.add(0);
         shard.add(1);

@@ -1,6 +1,8 @@
 package cn.cctstudio.qqbotauth.qq;
 
 import cn.cctstudio.qqbotauth.qq.event.EventHandler;
+import cn.cctstudio.qqbotauth.qq.event.GroupMemberAddEvent;
+import cn.cctstudio.qqbotauth.qq.event.GroupMemberRemoveEvent;
 import cn.cctstudio.qqbotauth.qq.event.GroupMessageEvent;
 import cn.cctstudio.qqbotauth.qq.event.QQEvent;
 import com.google.gson.JsonArray;
@@ -34,6 +36,11 @@ public final class QQEventDispatcher {
     }
 
     public CompletionStage<Void> dispatch(String eventType, String eventId, JsonObject data) {
+        if ("GROUP_DEL_ROBOT".equals(eventType)) {
+            warningLogger.accept("QQ Bot was removed from group " + QQApiClient.string(data, "group_openid")
+                    + "; events and replies from that group are no longer available");
+            return CompletableFuture.completedFuture(null);
+        }
         Optional<? extends QQEvent> parsed = parse(eventType, eventId, data);
         if (parsed.isEmpty()) {
             return CompletableFuture.completedFuture(null);
@@ -65,6 +72,20 @@ public final class QQEventDispatcher {
                         authorValue(data, "member_role"),
                         QQApiClient.string(data, "content").trim(),
                         rfc3339(data, "timestamp")
+                ));
+                case "GROUP_MEMBER_REMOVE" -> Optional.of(new GroupMemberRemoveEvent(
+                        eventId,
+                        required(data, "group_openid"),
+                        required(data, "member_openid"),
+                        QQApiClient.string(data, "user_openid"),
+                        unixSeconds(data, "timestamp")
+                ));
+                case "GROUP_MEMBER_ADD" -> Optional.of(new GroupMemberAddEvent(
+                        eventId,
+                        required(data, "group_openid"),
+                        required(data, "member_openid"),
+                        QQApiClient.string(data, "user_openid"),
+                        unixSeconds(data, "timestamp")
                 ));
                 default -> Optional.empty();
             };
@@ -134,6 +155,14 @@ public final class QQEventDispatcher {
         } catch (DateTimeParseException exception) {
             throw new IllegalArgumentException("Invalid " + key, exception);
         }
+    }
+
+    private static Instant unixSeconds(JsonObject data, String key) {
+        long value = QQApiClient.longValue(data, key, Long.MIN_VALUE);
+        if (value == Long.MIN_VALUE) {
+            throw new IllegalArgumentException("Missing or invalid " + key);
+        }
+        return Instant.ofEpochSecond(value);
     }
 
     private static String rootMessage(Throwable failure) {

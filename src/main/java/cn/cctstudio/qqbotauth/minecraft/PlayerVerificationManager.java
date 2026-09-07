@@ -6,7 +6,6 @@ import cn.cctstudio.qqbotauth.velocity.ServerTransferService;
 import cn.cctstudio.qqbotauth.verification.BindingRecord;
 import cn.cctstudio.qqbotauth.verification.BindingService;
 import cn.cctstudio.qqbotauth.verification.VerificationCode;
-import cn.cctstudio.qqbotauth.verification.VerificationService;
 import cn.cctstudio.qqbotauth.util.HumanDurationFormatter;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.title.Title;
@@ -52,15 +51,17 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.function.Consumer;
 
 public final class PlayerVerificationManager implements Listener, AutoCloseable {
     private final JavaPlugin plugin;
     private final BindingService bindingService;
-    private final VerificationService verificationService;
     private final ServerTransferService transferService;
     private final VerificationDialogService dialogService;
     private final MessageService messages;
     private final Supplier<PluginConfig> config;
+    private final Consumer<UUID> bindingRewardListener;
+    private final boolean authGateEnabled;
     private final Map<UUID, PlayerVerificationState> states = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> transfers = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> codeTimeouts = new ConcurrentHashMap<>();
@@ -70,19 +71,21 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
     public PlayerVerificationManager(
             JavaPlugin plugin,
             BindingService bindingService,
-            VerificationService verificationService,
             ServerTransferService transferService,
             VerificationDialogService dialogService,
             MessageService messages,
-            Supplier<PluginConfig> config
+            Supplier<PluginConfig> config,
+            Consumer<UUID> bindingRewardListener,
+            boolean authGateEnabled
     ) {
         this.plugin = plugin;
         this.bindingService = bindingService;
-        this.verificationService = verificationService;
         this.transferService = transferService;
         this.dialogService = dialogService;
         this.messages = messages;
         this.config = config;
+        this.bindingRewardListener = bindingRewardListener;
+        this.authGateEnabled = authGateEnabled;
     }
 
     public void register() {
@@ -97,7 +100,7 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             reminderTask.cancel();
             reminderTask = null;
         }
-        int seconds = config.get().player().reminderSeconds();
+        int seconds = authGateEnabled ? config.get().player().reminderSeconds() : 0;
         if (seconds <= 0) {
             return;
         }
@@ -115,13 +118,8 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             if (!player.isOnline()) {
                 return;
             }
-            if (!config.get().qq().enabled()) {
-                plugin.getLogger().info("[QQBot] QQ verification is disabled; allowing " + player.getName());
-                states.put(player.getUniqueId(), PlayerVerificationState.TRANSFERRING);
-                bypassVerification(player);
-                return;
-            }
-            if (!config.get().qq().hasCredentials()) {
+            if (config.get().player().forceVerification()
+                    && (!config.get().qq().enabled() || !config.get().qq().hasCredentials())) {
                 plugin.getLogger().warning("[QQBot] Holding " + player.getName()
                         + " on the login server because QQ credentials are missing");
                 states.put(player.getUniqueId(), PlayerVerificationState.UNVERIFIED);
@@ -149,13 +147,17 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         assertMainThread();
         UUID playerId = player.getUniqueId();
         if (!states.containsKey(playerId)) {
-            player.sendMessage(messages.message("authme-required"));
+            if (authGateEnabled) {
+                player.sendMessage(messages.message("authme-required"));
+            } else {
+                checkManualBinding(player, userInitiated);
+            }
             return;
         }
         if (userInitiated) {
             player.sendMessage(messages.message("checking"));
         }
-        bindingService.findByMinecraft(playerId).whenComplete((binding, failure) -> runMain(() -> {
+        bindingService.hasAnyBinding(playerId).whenComplete((bound, failure) -> runMain(() -> {
             if (!player.isOnline() || !states.containsKey(playerId)) {
                 return;
             }
@@ -165,20 +167,30 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
                 states.put(playerId, PlayerVerificationState.UNVERIFIED);
                 return;
             }
-            if (binding.isPresent()) {
-                plugin.getLogger().info("[QQBot] Existing QQ binding found for " + player.getName());
+            if (bound) {
+                plugin.getLogger().info("[QQBot] Existing QQ or Discord binding found for " + player.getName());
+                bindingRewardListener.accept(playerId);
                 beginTransfer(player);
             } else {
-                plugin.getLogger().info("[QQBot] No QQ binding found for " + player.getName()
-                        + "; keeping player on the login server");
+                plugin.getLogger().info("[QQBot] No QQ or Discord binding found for " + player.getName());
                 states.put(playerId, PlayerVerificationState.UNVERIFIED);
-                issueCode(player);
+                if (config.get().player().forceVerification()
+                        && config.get().qq().enabled() && config.get().qq().hasCredentials()) {
+                    issueCode(player);
+                }
+                if (!config.get().player().forceVerification()) {
+                    transferUnverified(player);
+                }
             }
         }));
     }
 
     public void createAndShowCode(Player player, boolean forceNew) {
         assertMainThread();
+        if (!authGateEnabled) {
+            startManualBinding(player, forceNew);
+            return;
+        }
         if (states.get(player.getUniqueId()) != PlayerVerificationState.UNVERIFIED) {
             if (states.get(player.getUniqueId()) == PlayerVerificationState.TRANSFERRING) {
                 player.sendMessage(messages.message("already-verified"));
@@ -191,7 +203,7 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             issueCode(player);
             return;
         }
-        VerificationCode code = verificationService.current(player.getUniqueId()).orElse(null);
+        VerificationCode code = bindingService.currentVerificationCode(player.getUniqueId()).orElse(null);
         if (code == null) {
             player.sendMessage(messages.message("code-expired"));
             return;
@@ -201,14 +213,19 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
     }
 
     public void onBindingSuccess(BindingRecord binding) {
-        completedBindings.add(binding.minecraftUuid());
+        onSocialBindingSuccess(binding.minecraftUuid());
+    }
+
+    public void onSocialBindingSuccess(UUID playerUuid) {
+        completedBindings.add(playerUuid);
+        bindingRewardListener.accept(playerUuid);
         runMain(() -> {
-            Player player = Bukkit.getPlayer(binding.minecraftUuid());
+            Player player = Bukkit.getPlayer(playerUuid);
             if (player != null && player.isOnline()
-                    && states.get(binding.minecraftUuid()) == PlayerVerificationState.UNVERIFIED) {
+                    && states.get(playerUuid) == PlayerVerificationState.UNVERIFIED) {
                 beginTransfer(player);
             } else {
-                completedBindings.remove(binding.minecraftUuid());
+                completedBindings.remove(playerUuid);
             }
         });
     }
@@ -229,7 +246,7 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         completedBindings.remove(playerId);
         cancelCodeTimeout(playerId);
         states.put(playerId, PlayerVerificationState.TRANSFERRING);
-        verificationService.invalidate(playerId);
+        bindingService.invalidateVerificationCode(playerId);
         player.closeDialog();
         player.sendMessage(messages.message("verification-success"));
         BukkitTask old = transfers.remove(playerId);
@@ -278,6 +295,44 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         finishTransfer(player, transfer.verifiedServer());
     }
 
+    private void transferUnverified(Player player) {
+        assertMainThread();
+        PluginConfig.Transfer transfer = config.get().player().transfer();
+        if (!transfer.enabled()) {
+            transferService.publishVerificationState(player, false);
+            states.remove(player.getUniqueId());
+            return;
+        }
+        transferService.publishVerificationState(player, false);
+        player.sendMessage(messages.message("unbound-server-reminder", Map.of("group", displayGroup())));
+        int delay = transfer.delaySeconds();
+        if (delay <= 0) {
+            finishUnverifiedTransfer(player, transfer.verifiedServer());
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        cancelTransfer(playerId);
+        final int[] remaining = {delay};
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline()) {
+                cancelTransfer(playerId);
+                return;
+            }
+            if (remaining[0] <= 0) {
+                cancelTransfer(playerId);
+                finishUnverifiedTransfer(player, config.get().player().transfer().verifiedServer());
+                return;
+            }
+            String seconds = Integer.toString(remaining[0]--);
+            player.showTitle(Title.title(
+                    messages.raw("unbound-transfer-countdown-title", Map.of("seconds", seconds)),
+                    messages.raw("unbound-transfer-countdown-subtitle", Map.of("seconds", seconds)),
+                    Title.Times.times(Duration.ofMillis(150), Duration.ofMillis(900), Duration.ofMillis(150))
+            ));
+        }, 0L, 20L);
+        transfers.put(playerId, task);
+    }
+
     private void finishTransfer(Player player, String serverName) {
         assertMainThread();
         if (!player.isOnline()) {
@@ -290,8 +345,18 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         transferService.connect(player, serverName);
     }
 
+    private void finishUnverifiedTransfer(Player player, String serverName) {
+        assertMainThread();
+        if (!player.isOnline()) return;
+        player.sendMessage(messages.message("unbound-transfer-now"));
+        plugin.getLogger().info("[QQBot] Relaxed verification is enabled; transferring unbound player "
+                + player.getName() + " to " + serverName);
+        transferService.publishVerificationState(player, false);
+        transferService.connect(player, serverName);
+    }
+
     private void showInstructions(Player player, boolean openDialog) {
-        VerificationCode code = verificationService.current(player.getUniqueId()).orElse(null);
+        VerificationCode code = bindingService.currentVerificationCode(player.getUniqueId()).orElse(null);
         if (code == null) {
             return;
         }
@@ -303,10 +368,18 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
 
     private void issueCode(Player player) {
         assertMainThread();
-        VerificationCode code = verificationService.create(player.getUniqueId(), player.getName());
-        scheduleCodeTimeout(player, code);
-        showCode(player, code);
-        dialogService.show(player, code);
+        bindingService.createVerificationCode(player.getUniqueId(), player.getName())
+                .whenComplete((code, failure) -> runMain(() -> {
+                    if (!player.isOnline()) return;
+                    if (failure != null) {
+                        plugin.getLogger().warning("[QQBot] Failed to create binding code: " + rootMessage(failure));
+                        player.sendMessage(messages.message("service-unavailable"));
+                        return;
+                    }
+                    scheduleCodeTimeout(player, code);
+                    showCode(player, code);
+                    dialogService.show(player, code);
+                }));
     }
 
     private void scheduleCodeTimeout(Player player, VerificationCode code) {
@@ -316,16 +389,32 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         long ticks = Math.max(1, (millis + 49) / 50);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             codeTimeouts.remove(playerId);
-            if (!player.isOnline()
-                    || states.get(playerId) != PlayerVerificationState.UNVERIFIED
-                    || completedBindings.contains(playerId)) {
-                return;
-            }
-            verificationService.invalidate(playerId);
-            states.remove(playerId);
-            transferService.publishVerificationState(player, false);
-            plugin.getLogger().info("[QQBot] QQ verification timed out for " + player.getName());
-            player.kick(messages.message("verification-timeout"));
+            if (completedBindings.contains(playerId)) return;
+            bindingService.findByMinecraft(playerId).whenComplete((binding, failure) -> runMain(() -> {
+                if (failure != null) {
+                    plugin.getLogger().warning("[QQBot] Failed to check timed-out binding: "
+                            + rootMessage(failure));
+                    if (player.isOnline()) player.sendMessage(messages.message("service-unavailable"));
+                    return;
+                }
+                if (binding.isPresent()) {
+                    if (player.isOnline() && !authGateEnabled) {
+                        player.closeDialog();
+                        player.sendMessage(messages.message("already-verified"));
+                    }
+                    return;
+                }
+                bindingService.invalidateVerificationCode(playerId);
+                if (!player.isOnline()) return;
+                if (authGateEnabled && states.get(playerId) != PlayerVerificationState.UNVERIFIED) return;
+                states.remove(playerId);
+                transferService.publishVerificationState(player, false);
+                plugin.getLogger().info("[QQBot] QQ verification timed out for " + player.getName());
+                player.sendMessage(messages.message("verification-timeout"));
+                if (authGateEnabled && config.get().player().forceVerification()) {
+                    player.kick(messages.message("verification-timeout"));
+                }
+            }));
         }, ticks);
         codeTimeouts.put(playerId, task);
     }
@@ -343,6 +432,40 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
     private String displayGroup() {
         String group = config.get().qq().groupNumber();
         return group.isBlank() ? "服主配置的验证群" : group;
+    }
+
+    private void startManualBinding(Player player, boolean forceNew) {
+        UUID playerId = player.getUniqueId();
+        bindingService.findByMinecraft(playerId).whenComplete((binding, failure) -> runMain(() -> {
+            if (!player.isOnline()) return;
+            if (failure != null) {
+                player.sendMessage(messages.message("service-unavailable"));
+            } else if (binding.isPresent()) {
+                player.sendMessage(messages.message("already-verified"));
+            } else {
+                VerificationCode current = bindingService.currentVerificationCode(playerId).orElse(null);
+                if (forceNew || current == null) issueCode(player);
+                else {
+                    showCode(player, current);
+                    dialogService.show(player, current);
+                }
+            }
+        }));
+    }
+
+    private void checkManualBinding(Player player, boolean userInitiated) {
+        if (userInitiated) player.sendMessage(messages.message("checking"));
+        bindingService.findByMinecraft(player.getUniqueId()).whenComplete((binding, failure) -> runMain(() -> {
+            if (!player.isOnline()) return;
+            if (failure != null) player.sendMessage(messages.message("service-unavailable"));
+            else if (binding.isPresent()) {
+                cancelCodeTimeout(player.getUniqueId());
+                player.closeDialog();
+                player.sendMessage(messages.message("already-verified"));
+            } else {
+                showInstructions(player, false);
+            }
+        }));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -526,6 +649,8 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
             return;
         }
         event.setCancelled(true);
+        event.getPlayer().sendMessage(messages.message(
+                "chat-blocked", Map.of("group", displayGroup())));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -555,7 +680,9 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         assertMainThread();
         states.remove(playerId);
         completedBindings.remove(playerId);
-        verificationService.invalidate(playerId);
+        if (config.get().player().forceVerification()) {
+            bindingService.invalidateVerificationCode(playerId);
+        }
         cancelTransfer(playerId);
         cancelCodeTimeout(playerId);
         if (player.isOnline()) {

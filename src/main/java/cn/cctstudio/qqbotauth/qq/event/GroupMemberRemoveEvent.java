@@ -1,9 +1,15 @@
 package cn.cctstudio.qqbotauth.qq.event;
 
+import java.time.Instant;
+
 /**
- * TODO: Extension point for a future official QQ group-member-removed event.
- * The current official QQ Bot documentation does not define a normal QQ group member leave payload,
- * so QQBotAuth intentionally does not subscribe to or construct this event yet.
+ * Official QQ {@code GROUP_MEMBER_REMOVE} event.
  */
-public record GroupMemberRemoveEvent(String eventId) implements QQEvent {
+public record GroupMemberRemoveEvent(
+        String eventId,
+        String groupOpenId,
+        String memberOpenId,
+        String userOpenId,
+        Instant timestamp
+) implements QQEvent {
 }

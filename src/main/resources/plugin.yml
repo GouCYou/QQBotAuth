@@ -5,12 +5,12 @@ api-version: '1.21.11'
 load: POSTWORLD
 authors: [GouC, CCTStudio]
 description: CCTStudio 官方 QQ 机器人账号验证插件
-depend: [AuthMe]
+softdepend: [AuthMe, CCTSystem]
 commands:
-  qqverify:
+  qqbotauth:
     description: 打开 QQ 验证界面或管理 QQBotAuth
-    usage: /qqverify [status|code|groups|reload|migrate mysql]
-    aliases: [qqyz]
+    usage: /qqbotauth [bind|unbind|status]
+    aliases: [qqverify, qqyz]
     permission: qqbotauth.use
 permissions:
   qqbotauth.use:

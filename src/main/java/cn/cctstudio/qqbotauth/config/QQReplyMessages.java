@@ -46,6 +46,7 @@ public final class QQReplyMessages {
         values.put("query-unbound", "当前 QQ 尚未绑定 CCTStudio 账号。");
         values.put("unbind-success", "解绑成功。");
         values.put("unbind-not-bound", "当前 QQ 没有可解除的绑定。");
+        values.put("member-left-unbound", "绑定该账号的群成员已退出，CCTStudio 账号 <minecraft> 已自动解绑。");
         return Map.copyOf(values);
     }
 }

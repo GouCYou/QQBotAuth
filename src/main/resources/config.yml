@@ -18,27 +18,6 @@ verification:
   code-length: 6
   expire-seconds: 120
 
-# QQ 群中由机器人发送的纯文本回复。<minecraft> 会替换为玩家名。
-qq-messages:
-  help: |-
-    可用指令：
-    绑定 <验证码> - 绑定 CCTStudio 账号
-    查询 - 查看当前绑定
-    解绑 - 解除当前 QQ 在本群的绑定
-    帮助 - 查看本说明
-  unknown-command: "没有找到这个指令。发送“帮助”查看可用指令。"
-  operation-failed: "操作失败，请稍后重试。若问题持续，请联系服务器管理员。"
-  bind-usage: "用法：绑定 <游戏内显示的验证码>"
-  bind-success: "绑定成功！CCTStudio 账号：<minecraft>。现在可正常游戏。"
-  bind-invalid-code: "验证码无效或已过期，请重新进入服务器获取新的验证码。"
-  bind-qq-already-bound: "这个 QQ 账号已经绑定了其他 CCTStudio 账号，请先发送 “解绑”。"
-  bind-minecraft-already-bound: "这个 CCTStudio 账号已经完成绑定。"
-  bind-code-used: "验证码已经被使用，请重新进入服务器获取新的验证码。"
-  query-bound: "已绑定 CCTStudio 账号：<minecraft>"
-  query-unbound: "当前 QQ 尚未绑定 CCTStudio 账号。"
-  unbind-success: "解绑成功。"
-  unbind-not-bound: "当前 QQ 没有可解除的绑定。"
-
 database:
   # sqlite 或 mysql
   mode: sqlite
@@ -54,13 +33,18 @@ database:
     allow-public-key-retrieval: true
 
 player:
-  block-movement: true
+  # false：未绑定玩家仍可进入子服，但禁止聊天/喊话/购买会员；QQ 群绑定仍可正常使用。
+  # true：保持强制验证，未绑定玩家只能停留在登录服完成绑定。
+  force-verification: false
+  block-movement: false
   block-interaction: true
   # 完成 QQ 验证前屏蔽其余全部指令；Velocity 还会隐藏对应命令与服务器补全。
   block-server-command: true
   allowed-commands:
+    - "qqbotauth"
     - "qqverify"
     - "qqyz"
+    - "qqbotauth:qqbotauth"
     - "qqbotauth:qqverify"
     - "qqbotauth:qqyz"
   reminder-seconds: 15
@@ -84,9 +68,12 @@ messages:
   transfer-countdown-title: "<green>验证完毕！</green>"
   transfer-countdown-subtitle: "<gray><seconds> 秒后前往大厅</gray>"
   transfer-now: "<green>验证完成，正在前往大厅……</green>"
-  # 暂时保留以下违规提示字段；当前版本会静默拦截，不向玩家发送。
+  unbound-transfer-countdown-title: "<yellow>登录完成</yellow>"
+  unbound-transfer-countdown-subtitle: "<gray><seconds> 秒后前往大厅</gray>"
+  unbound-transfer-now: "<yellow>正在前往大厅。您尚未绑定 QQ 或 Discord，部分功能将受到限制。</yellow>"
   command-blocked: "<red>请先完成 QQ 验证</red>"
-  chat-blocked: "<red>请先完成 QQ 验证</red>"
+  chat-blocked: "<red>未进行绑定，请前往官网个人中心绑定 Discord，或加入 QQ 群 <group> 绑定 QQ 后再发言。</red>"
+  unbound-server-reminder: "<red>您尚未绑定 QQ 或 Discord。当前无法发言及购买会员，请前往官网个人中心绑定 Discord，或加入 QQ 群 <group> 绑定 QQ。</red>"
   interaction-blocked: "<yellow>请先完成 QQ 验证。</yellow>"
   dialog-title: "<aqua>绑定 QQ</aqua>"
   dialog-body: "<yellow>请加入 QQ 群 <aqua><group></aqua>，在群内发送：</yellow>\n\n<white>@CCTStudio Bot 绑定 <green><code></green></white>\n\n<gray>验证码剩余有效时间 <expire></gray>"
@@ -94,3 +81,37 @@ messages:
   dialog-check: "检查绑定"
   reload-success: "<green>配置已重新加载。</green>"
   reload-failed: "<red>配置重载失败，请查看控制台。</red>"
+
+# QQ 群中由机器人发送的纯文本回复。<minecraft> 会替换为玩家名。
+qq-messages:
+  help: |-
+    可用指令：
+    绑定 <验证码>
+    查询 - 查看当前绑定
+    解绑 - 解除当前 QQ 在本群的绑定
+    帮助 - 查看本说明
+
+    绑定示例：首先长按我，进行绑定操作
+    @CCTStudio Bot 绑定 XXXXXX
+  unknown-command: "没有找到这个指令。发送“帮助”查看可用指令。"
+  operation-failed: "操作失败，请稍后重试。若问题持续，请联系服务器管理员。"
+  bind-usage: "用法：绑定 <游戏内显示的验证码>"
+  bind-success: "绑定成功！CCTStudio 账号：<minecraft>。现在可正常游戏。"
+  bind-invalid-code: "验证码无效或已过期，请重新进入服务器获取新的验证码。"
+  bind-qq-already-bound: "这个 QQ 账号已经绑定了其他 CCTStudio 账号，请先发送 “解绑”。"
+  bind-minecraft-already-bound: "这个 CCTStudio 账号已经完成绑定。"
+  bind-code-used: "验证码已经被使用，请重新进入服务器获取新的验证码。"
+  query-bound: "已绑定 CCTStudio 账号：<minecraft>"
+  query-unbound: "当前 QQ 尚未绑定 CCTStudio 账号。"
+  unbind-success: "解绑成功。"
+  unbind-not-bound: "当前 QQ 没有可解除的绑定。"
+  member-left-unbound: "绑定该账号的群成员已退出，CCTStudio 账号 <minecraft> 已自动解绑。"
+
+# Paper 登录服向同机 Velocity 发送“解绑后踢出”控制消息。两端必须填写同一个至少 24 位的随机密钥。
+# 控制端口只允许监听和连接回环地址，不会对公网开放。
+velocity-control:
+  enabled: true
+  host: "127.0.0.1"
+  port: 25579
+  secret: ""
+  connect-timeout-millis: 2000

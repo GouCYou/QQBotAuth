@@ -1,4 +1,5 @@
 .gradle/
+.codex-tmp/
 .idea/
 build/
 run/
