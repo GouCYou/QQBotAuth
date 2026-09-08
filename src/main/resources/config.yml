@@ -6,7 +6,7 @@ qq:
   api-base-url: "https://api.bot.qq.com"
   access-token-url: "https://api.bot.qq.com/app/getAppAccessToken"
   # 面向玩家展示的普通 QQ 群号，不参与官方群身份校验。
-  group-number: ""
+  group-number: "640906149"
   # 官方事件中的 group_openid 白名单。空列表为安全发现模式：连接 Gateway，记录群来源，但不执行群命令。
   # 在目标群 @机器人 后，使用 /qqverify groups 查看并复制对应值。
   allowed-group-openids: []
@@ -33,7 +33,7 @@ database:
     allow-public-key-retrieval: true
 
 player:
-  # false：未绑定玩家仍可进入子服，但禁止聊天/喊话/购买会员；QQ 群绑定仍可正常使用。
+  # false：未绑定玩家仍可进入子服，但聊天/喊话限速且不能购买会员；QQ 群绑定仍可正常使用。
   # true：保持强制验证，未绑定玩家只能停留在登录服完成绑定。
   force-verification: false
   block-movement: false
@@ -47,6 +47,8 @@ player:
     - "qqbotauth:qqbotauth"
     - "qqbotauth:qqverify"
     - "qqbotauth:qqyz"
+  # 未绑定玩家每隔多少秒可以发送一次聊天或聊天类命令。
+  chat-cooldown-seconds: 30
   reminder-seconds: 15
   dialog-enabled: true
   transfer:
@@ -72,8 +74,8 @@ messages:
   unbound-transfer-countdown-subtitle: "<gray><seconds> 秒后前往大厅</gray>"
   unbound-transfer-now: "<yellow>正在前往大厅。您尚未绑定 QQ 或 Discord，部分功能将受到限制。</yellow>"
   command-blocked: "<red>请先完成 QQ 验证</red>"
-  chat-blocked: "<red>未进行绑定，请前往官网个人中心绑定 Discord，或加入 QQ 群 <group> 绑定 QQ 后再发言。</red>"
-  unbound-server-reminder: "<red>您尚未绑定 QQ 或 Discord。当前无法发言及购买会员，请前往官网个人中心绑定 Discord，或加入 QQ 群 <group> 绑定 QQ。</red>"
+  chat-blocked: "<red>冷却还剩 <seconds> 秒，请前往官网个人中心绑定 Discord，或加入 QQ 群 <group> 绑定 QQ 后解除限制。</red>"
+  unbound-server-reminder: "<red>您尚未绑定 QQ 或 Discord，每 30 秒只能发言一次且无法购买会员。请前往官网个人中心绑定 Discord，或加入 QQ 群 <group> 绑定 QQ 后解除限制。</red>"
   interaction-blocked: "<yellow>请先完成 QQ 验证。</yellow>"
   dialog-title: "<aqua>绑定 QQ</aqua>"
   dialog-body: "<yellow>请加入 QQ 群 <aqua><group></aqua>，在群内发送：</yellow>\n\n<white>@CCTStudio Bot 绑定 <green><code></green></white>\n\n<gray>验证码剩余有效时间 <expire></gray>"

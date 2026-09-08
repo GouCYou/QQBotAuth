@@ -21,6 +21,7 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.slf4j.Logger;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import cn.cctstudio.qqbotauth.util.UnboundChatRateLimiter;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -41,11 +42,15 @@ public final class QQBotAuthVelocityPlugin {
     private final Logger logger;
     private final Path dataDirectory;
     private final Set<UUID> verifiedOnlinePlayers = ConcurrentHashMap.newKeySet();
+    private final UnboundChatRateLimiter chatRateLimiter = new UnboundChatRateLimiter();
     private String authServer = "login";
     private String unverifiedMessage = "请先在登录服完成 QQ 验证。";
     private String commandBlockedMessage = "请先完成登录和 QQ 验证，再使用其他指令。";
-    private String chatBlockedMessage = "未进行绑定，请前往官网个人中心绑定 Discord，或加入 QQ 群绑定 QQ 后再发言。";
-    private String serverReminderMessage = "您尚未绑定 QQ 或 Discord，当前无法发言及购买会员。请前往官网绑定 Discord，或加入 QQ 群绑定 QQ。";
+    private String chatBlockedMessage = "冷却还剩 {seconds} 秒，请前往官网个人中心绑定 Discord，或加入 QQ 群 {group} 绑定 QQ 后解除限制。";
+    private String serverReminderMessage = "您尚未绑定 QQ 或 Discord，每 30 秒只能发言一次且无法购买会员。请前往官网个人中心绑定 Discord，或加入 QQ 群 {group} 绑定 QQ 后解除限制。";
+    private String bindingGroup = "640906149";
+    private int chatCooldownSeconds = 30;
+    private Set<String> purchaseQuantityBypassServers = Set.of("survival");
     private boolean forceVerification = true;
     private static final String DEFAULT_RESTRICTED_CHAT_COMMANDS =
             "shout,msg,tell,w,whisper,reply,r,me,say,broadcast,bc,emsg,etell,ewhisper,ereply,eme";
@@ -103,6 +108,7 @@ public final class QQBotAuthVelocityPlugin {
             }
             if (message.verified()) {
                 verifiedOnlinePlayers.add(message.playerUuid());
+                chatRateLimiter.clear(message.playerUuid());
             } else {
                 verifiedOnlinePlayers.remove(message.playerUuid());
             }
@@ -132,8 +138,12 @@ public final class QQBotAuthVelocityPlugin {
 
         if (!forceVerification) {
             if (isRestrictedChatCommand(event.getCommand())) {
-                event.setResult(CommandExecuteEvent.CommandResult.denied());
-                player.sendMessage(red(chatBlockedMessage));
+                UnboundChatRateLimiter.Decision decision = chatRateLimiter.acquire(
+                        player.getUniqueId(), chatCooldownSeconds);
+                if (!decision.allowed()) {
+                    event.setResult(CommandExecuteEvent.CommandResult.denied());
+                    sendCooldown(player, decision.remainingSeconds());
+                }
             }
             return;
         }
@@ -179,8 +189,12 @@ public final class QQBotAuthVelocityPlugin {
     @Subscribe(priority = Short.MIN_VALUE)
     public void onChat(PlayerChatEvent event) {
         if (forceVerification || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) return;
+        if (isPurchaseQuantityBypass(event.getPlayer(), event.getMessage())) return;
+        UnboundChatRateLimiter.Decision decision = chatRateLimiter.acquire(
+                event.getPlayer().getUniqueId(), chatCooldownSeconds);
+        if (decision.allowed()) return;
         event.setResult(PlayerChatEvent.ChatResult.denied());
-        event.getPlayer().sendMessage(red(chatBlockedMessage));
+        sendCooldown(event.getPlayer(), decision.remainingSeconds());
     }
 
     @Subscribe
@@ -189,12 +203,13 @@ public final class QQBotAuthVelocityPlugin {
         boolean onAuthServer = event.getPlayer().getCurrentServer()
                 .map(connection -> authServer.equalsIgnoreCase(connection.getServerInfo().getName()))
                 .orElse(false);
-        if (!onAuthServer) event.getPlayer().sendMessage(red(serverReminderMessage));
+        if (!onAuthServer) event.getPlayer().sendMessage(red(renderBindingMessage(serverReminderMessage)));
     }
 
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
         verifiedOnlinePlayers.remove(event.getPlayer().getUniqueId());
+        chatRateLimiter.clear(event.getPlayer().getUniqueId());
     }
 
     private void loadConfiguration() {
@@ -212,6 +227,9 @@ public final class QQBotAuthVelocityPlugin {
             changed |= putDefault(properties, "unverified-message", unverifiedMessage);
             changed |= putDefault(properties, "chat-blocked-message", chatBlockedMessage);
             changed |= putDefault(properties, "server-reminder-message", serverReminderMessage);
+            changed |= putDefault(properties, "binding-group", bindingGroup);
+            changed |= putDefault(properties, "chat-cooldown-seconds", Integer.toString(chatCooldownSeconds));
+            changed |= putDefault(properties, "purchase-quantity-bypass-servers", "survival");
             changed |= putDefault(properties, "restricted-chat-commands", DEFAULT_RESTRICTED_CHAT_COMMANDS);
             changed |= putDefault(properties, "block-commands", Boolean.toString(blockCommands));
             changed |= putDefault(properties, "hide-command-suggestions", Boolean.toString(hideCommandSuggestions));
@@ -235,6 +253,11 @@ public final class QQBotAuthVelocityPlugin {
                     "chat-blocked-message", chatBlockedMessage).trim();
             serverReminderMessage = properties.getProperty(
                     "server-reminder-message", serverReminderMessage).trim();
+            bindingGroup = properties.getProperty("binding-group", bindingGroup).trim();
+            chatCooldownSeconds = parseBoundedInteger(properties.getProperty(
+                    "chat-cooldown-seconds", "30"), 1, 3600, "chat-cooldown-seconds");
+            purchaseQuantityBypassServers = parseCommands(properties.getProperty(
+                    "purchase-quantity-bypass-servers", "survival"));
             restrictedChatCommands = parseCommands(properties.getProperty(
                     "restricted-chat-commands", DEFAULT_RESTRICTED_CHAT_COMMANDS));
             commandBlockedMessage = properties.getProperty(
@@ -266,6 +289,8 @@ public final class QQBotAuthVelocityPlugin {
             blockCommands = true;
             hideCommandSuggestions = true;
             commandGatePolicy = CommandGatePolicy.fromCsv(CommandGatePolicy.DEFAULT_ALLOWED_COMMANDS);
+            chatCooldownSeconds = 30;
+            purchaseQuantityBypassServers = Set.of("survival");
             controlEnabled = false;
         }
     }
@@ -312,6 +337,23 @@ public final class QQBotAuthVelocityPlugin {
                 || (root.equals("cct") && parts[1].equals("shout"));
     }
 
+    private boolean isPurchaseQuantityBypass(Player player, String message) {
+        if (!UnboundChatRateLimiter.isPurchaseQuantity(message)) return false;
+        return player.getCurrentServer()
+                .map(connection -> connection.getServerInfo().getName().toLowerCase(java.util.Locale.ROOT))
+                .filter(purchaseQuantityBypassServers::contains)
+                .isPresent();
+    }
+
+    private void sendCooldown(Player player, long seconds) {
+        player.sendMessage(red(renderBindingMessage(chatBlockedMessage)
+                .replace("{seconds}", Long.toString(seconds))));
+    }
+
+    private String renderBindingMessage(String message) {
+        return message.replace("{group}", bindingGroup);
+    }
+
     private static Set<String> parseCommands(String csv) {
         Set<String> commands = ConcurrentHashMap.newKeySet();
         for (String value : csv.split(",")) {
@@ -336,6 +378,14 @@ public final class QQBotAuthVelocityPlugin {
             return value;
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("control-port must be an integer", exception);
+        }
+    }
+
+    private static int parseBoundedInteger(String raw, int min, int max, String key) {
+        try {
+            return Math.max(min, Math.min(max, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(key + " must be an integer", exception);
         }
     }
 

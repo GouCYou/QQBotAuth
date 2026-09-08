@@ -7,6 +7,7 @@ import cn.cctstudio.qqbotauth.verification.BindingRecord;
 import cn.cctstudio.qqbotauth.verification.BindingService;
 import cn.cctstudio.qqbotauth.verification.VerificationCode;
 import cn.cctstudio.qqbotauth.util.HumanDurationFormatter;
+import cn.cctstudio.qqbotauth.util.UnboundChatRateLimiter;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
@@ -66,6 +67,7 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
     private final Map<UUID, BukkitTask> transfers = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> codeTimeouts = new ConcurrentHashMap<>();
     private final Set<UUID> completedBindings = ConcurrentHashMap.newKeySet();
+    private final UnboundChatRateLimiter chatRateLimiter = new UnboundChatRateLimiter();
     private BukkitTask reminderTask;
 
     public PlayerVerificationManager(
@@ -648,9 +650,14 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         if (!isAwaitingVerification(event.getPlayer().getUniqueId())) {
             return;
         }
+        UnboundChatRateLimiter.Decision decision = chatRateLimiter.acquire(
+                event.getPlayer().getUniqueId(), config.get().player().chatCooldownSeconds());
+        if (decision.allowed()) return;
         event.setCancelled(true);
         event.getPlayer().sendMessage(messages.message(
-                "chat-blocked", Map.of("group", displayGroup())));
+                "chat-blocked", Map.of(
+                        "group", displayGroup(),
+                        "seconds", Long.toString(decision.remainingSeconds()))));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -680,6 +687,7 @@ public final class PlayerVerificationManager implements Listener, AutoCloseable 
         assertMainThread();
         states.remove(playerId);
         completedBindings.remove(playerId);
+        chatRateLimiter.clear(playerId);
         if (config.get().player().forceVerification()) {
             bindingService.invalidateVerificationCode(playerId);
         }

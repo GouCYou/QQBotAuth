@@ -67,6 +67,7 @@ public record PluginConfig(
             boolean blockInteraction,
             boolean blockServerCommand,
             Set<String> allowedCommands,
+            int chatCooldownSeconds,
             int reminderSeconds,
             boolean dialogEnabled,
             Transfer transfer

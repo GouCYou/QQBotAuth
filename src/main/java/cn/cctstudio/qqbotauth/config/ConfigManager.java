@@ -114,6 +114,8 @@ public final class ConfigManager {
                 config.getBoolean("player.block-interaction", true),
                 config.getBoolean("player.block-server-command", true),
                 normalizedCommands(config.getStringList("player.allowed-commands")),
+                bounded(config.getInt("player.chat-cooldown-seconds", 30), 1, 3600,
+                        "player.chat-cooldown-seconds"),
                 bounded(config.getInt("player.reminder-seconds", 15), 0, 3600, "player.reminder-seconds"),
                 config.getBoolean("player.dialog-enabled", true),
                 transfer
