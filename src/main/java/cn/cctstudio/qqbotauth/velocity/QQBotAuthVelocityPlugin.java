@@ -50,7 +50,6 @@ public final class QQBotAuthVelocityPlugin {
     private String serverReminderMessage = "您尚未绑定 QQ 或 Discord，每 30 秒只能发言一次且无法购买会员。请前往官网个人中心绑定 Discord，或加入 QQ 群 {group} 绑定 QQ 后解除限制。";
     private String bindingGroup = "640906149";
     private int chatCooldownSeconds = 30;
-    private Set<String> purchaseQuantityBypassServers = Set.of("survival");
     private boolean forceVerification = true;
     private static final String DEFAULT_RESTRICTED_CHAT_COMMANDS =
             "shout,msg,tell,w,whisper,reply,r,me,say,broadcast,bc,emsg,etell,ewhisper,ereply,eme";
@@ -189,7 +188,6 @@ public final class QQBotAuthVelocityPlugin {
     @Subscribe(priority = Short.MIN_VALUE)
     public void onChat(PlayerChatEvent event) {
         if (forceVerification || verifiedOnlinePlayers.contains(event.getPlayer().getUniqueId())) return;
-        if (isPurchaseQuantityBypass(event.getPlayer(), event.getMessage())) return;
         UnboundChatRateLimiter.Decision decision = chatRateLimiter.acquire(
                 event.getPlayer().getUniqueId(), chatCooldownSeconds);
         if (decision.allowed()) return;
@@ -229,7 +227,6 @@ public final class QQBotAuthVelocityPlugin {
             changed |= putDefault(properties, "server-reminder-message", serverReminderMessage);
             changed |= putDefault(properties, "binding-group", bindingGroup);
             changed |= putDefault(properties, "chat-cooldown-seconds", Integer.toString(chatCooldownSeconds));
-            changed |= putDefault(properties, "purchase-quantity-bypass-servers", "survival");
             changed |= putDefault(properties, "restricted-chat-commands", DEFAULT_RESTRICTED_CHAT_COMMANDS);
             changed |= putDefault(properties, "block-commands", Boolean.toString(blockCommands));
             changed |= putDefault(properties, "hide-command-suggestions", Boolean.toString(hideCommandSuggestions));
@@ -256,8 +253,6 @@ public final class QQBotAuthVelocityPlugin {
             bindingGroup = properties.getProperty("binding-group", bindingGroup).trim();
             chatCooldownSeconds = parseBoundedInteger(properties.getProperty(
                     "chat-cooldown-seconds", "30"), 1, 3600, "chat-cooldown-seconds");
-            purchaseQuantityBypassServers = parseCommands(properties.getProperty(
-                    "purchase-quantity-bypass-servers", "survival"));
             restrictedChatCommands = parseCommands(properties.getProperty(
                     "restricted-chat-commands", DEFAULT_RESTRICTED_CHAT_COMMANDS));
             commandBlockedMessage = properties.getProperty(
@@ -290,7 +285,6 @@ public final class QQBotAuthVelocityPlugin {
             hideCommandSuggestions = true;
             commandGatePolicy = CommandGatePolicy.fromCsv(CommandGatePolicy.DEFAULT_ALLOWED_COMMANDS);
             chatCooldownSeconds = 30;
-            purchaseQuantityBypassServers = Set.of("survival");
             controlEnabled = false;
         }
     }
@@ -335,14 +329,6 @@ public final class QQBotAuthVelocityPlugin {
         if (parts.length < 2) return false;
         return (root.equals("cmi") && restrictedChatCommands.contains(parts[1]))
                 || (root.equals("cct") && parts[1].equals("shout"));
-    }
-
-    private boolean isPurchaseQuantityBypass(Player player, String message) {
-        if (!UnboundChatRateLimiter.isPurchaseQuantity(message)) return false;
-        return player.getCurrentServer()
-                .map(connection -> connection.getServerInfo().getName().toLowerCase(java.util.Locale.ROOT))
-                .filter(purchaseQuantityBypassServers::contains)
-                .isPresent();
     }
 
     private void sendCooldown(Player player, long seconds) {

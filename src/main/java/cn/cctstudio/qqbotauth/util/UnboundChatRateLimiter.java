@@ -39,23 +39,6 @@ public final class UnboundChatRateLimiter {
         nextAllowedAt.remove(playerId);
     }
 
-    /**
-     * QuickShop accepts a signed 32-bit integer as a purchase quantity. Velocity
-     * cannot see QuickShop's backend interaction state, so callers additionally
-     * scope this narrow bypass to servers on which QuickShop is installed.
-     */
-    public static boolean isPurchaseQuantity(String message) {
-        String value = message == null ? "" : message.strip();
-        if (value.isEmpty() || value.length() > 10 || !value.chars().allMatch(Character::isDigit)) {
-            return false;
-        }
-        try {
-            return Integer.parseInt(value) > 0;
-        } catch (NumberFormatException ignored) {
-            return false;
-        }
-    }
-
     public record Decision(boolean allowed, long remainingSeconds) {
     }
 }

@@ -35,13 +35,4 @@ class UnboundChatRateLimiterTest {
         assertTrue(limiter.acquire(player, 30).allowed());
     }
 
-    @Test
-    void recognizesOnlyValidPositiveQuickShopQuantities() {
-        assertTrue(UnboundChatRateLimiter.isPurchaseQuantity("64"));
-        assertTrue(UnboundChatRateLimiter.isPurchaseQuantity(" 1 "));
-        assertFalse(UnboundChatRateLimiter.isPurchaseQuantity("0"));
-        assertFalse(UnboundChatRateLimiter.isPurchaseQuantity("-1"));
-        assertFalse(UnboundChatRateLimiter.isPurchaseQuantity("64 个"));
-        assertFalse(UnboundChatRateLimiter.isPurchaseQuantity("99999999999"));
-    }
 }
